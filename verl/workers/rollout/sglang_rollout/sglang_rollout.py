@@ -905,6 +905,7 @@ class SGLangRollout(BaseRollout):
                     content_ids = None
                     content = output["text"]
                 
+                print(f'[SGLangRollout] Assistant: {content[:100]}...')
                 if self.config.multi_turn.collabllm_rollouts:
                     finish_reason_type = None
                 else:
