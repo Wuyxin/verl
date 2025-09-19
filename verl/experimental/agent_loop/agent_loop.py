@@ -343,6 +343,38 @@ class RewardManagerWorker:
         if self.rm_executor is not None:
             res = ray.get(self.rm_executor.submit_task.remote(data))
             data = data.union(res)
+            
+        prompts = torch.tensor(output.prompt_ids, dtype=torch.long).unsqueeze(0)
+        responses = torch.tensor(output.response_ids, dtype=torch.long).unsqueeze(0)
+        attention_mask = torch.ones((1, prompts.shape[1] + responses.shape[1]), dtype=torch.long)
+        batch = TensorDict(
+            {
+                "prompts": prompts,  # [1, prompt_length]
+                "responses": responses,  # [1, response_length]
+                "attention_mask": attention_mask,  # [1, prompt_length + response_length]
+            },
+            batch_size=1,
+        )
+        non_tensor_batch = {
+            **{k: np.array([v]) for k, v in kwargs.items()},
+            "__num_turns__": np.array([output.num_turns]),
+        }
+        extra_fields = {}
+        for key, val in output.extra_fields.items():
+            extra_fields[key] = np.array([val], dtype=object)
+
+        non_tensor_batch.update(extra_fields)
+
+        data = DataProto(
+            batch=batch,
+            non_tensor_batch=non_tensor_batch,
+        )
+        result = await self.loop.run_in_executor(
+            None,
+            self.reward_manager,
+            data,
+            True,  # return_dict
+        )
 
         result = self.reward_manager(data, return_dict=True)
         reward_score = result["reward_tensor"].sum(dim=-1).item()
